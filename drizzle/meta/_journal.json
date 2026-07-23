@@ -1,19 +1,12 @@
 {
   "version": "7",
-  "dialect": "mysql",
+  "dialect": "postgresql",
   "entries": [
     {
       "idx": 0,
-      "version": "5",
-      "when": 1784816562732,
-      "tag": "0000_peaceful_wendell_vaughn",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "5",
-      "when": 1784816739650,
-      "tag": "0001_fresh_the_order",
+      "version": "7",
+      "when": 1784835957674,
+      "tag": "0000_rare_ultimatum",
       "breakpoints": true
     }
   ]
