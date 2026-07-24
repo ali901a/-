@@ -1,0 +1,1 @@
+- [Shift system design](shift-system-design.md) — business day boundary, overnight shifts, metrics calculation all in server/db.ts

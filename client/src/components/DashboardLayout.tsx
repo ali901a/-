@@ -31,6 +31,7 @@ import {
   Sun,
   Users,
   ClipboardList,
+  CalendarClock,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -39,6 +40,7 @@ import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
 const menuItems = [
   { icon: LayoutDashboard, label: "لوحة التحكم", path: "/" },
   { icon: Users, label: "إدارة الموظفين", path: "/employees" },
+  { icon: CalendarClock, label: "إدارة الورديات", path: "/shifts" },
   { icon: ClipboardList, label: "سجل الحضور", path: "/attendance-log" },
   { icon: BarChart3, label: "التقارير", path: "/reports" },
   { icon: Fingerprint, label: "تسجيل البصمة", path: "/biometric" },
@@ -175,17 +177,12 @@ function DashboardLayoutContent({
 
           {/* Footer */}
           <SidebarFooter className="p-3 border-t border-sidebar-border space-y-2">
-            {/* Dark mode toggle */}
             {switchable && !isCollapsed && (
               <button
                 onClick={toggleTheme}
                 className="flex items-center gap-3 w-full px-3 py-2 rounded-lg text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors text-sm font-medium"
               >
-                {theme === "dark" ? (
-                  <Sun className="h-4 w-4 shrink-0" />
-                ) : (
-                  <Moon className="h-4 w-4 shrink-0" />
-                )}
+                {theme === "dark" ? <Sun className="h-4 w-4 shrink-0" /> : <Moon className="h-4 w-4 shrink-0" />}
                 <span>{theme === "dark" ? "الوضع الفاتح" : "الوضع الليلي"}</span>
               </button>
             )}
@@ -199,7 +196,6 @@ function DashboardLayoutContent({
               </button>
             )}
 
-            {/* User */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-sidebar-accent transition-colors w-full focus:outline-none group-data-[collapsible=icon]:justify-center">
@@ -241,7 +237,6 @@ function DashboardLayoutContent({
 
       {/* Main content */}
       <SidebarInset className="bg-background">
-        {/* Mobile header */}
         {isMobile && (
           <div className="flex border-b border-border h-14 items-center justify-between bg-card px-4 sticky top-0 z-40">
             <div className="flex items-center gap-3">
@@ -256,16 +251,12 @@ function DashboardLayoutContent({
               </div>
             </div>
             {switchable && (
-              <button
-                onClick={toggleTheme}
-                className="p-2 rounded-lg hover:bg-accent transition-colors"
-              >
+              <button onClick={toggleTheme} className="p-2 rounded-lg hover:bg-accent transition-colors">
                 {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
               </button>
             )}
           </div>
         )}
-
         <main className="flex-1 p-5 md:p-6">{children}</main>
       </SidebarInset>
     </>

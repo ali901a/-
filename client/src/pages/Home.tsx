@@ -1,17 +1,11 @@
 import DashboardLayout from "@/components/DashboardLayout";
 import { trpc } from "@/lib/trpc";
 import {
-  Users,
-  UserCheck,
-  UserX,
-  Clock,
-  Briefcase,
-  LogIn,
-  LogOut,
-  TrendingUp,
-  RefreshCw,
+  Users, UserCheck, UserX, Clock, Briefcase, LogIn, LogOut, TrendingUp, RefreshCw,
+  AlertTriangle,
 } from "lucide-react";
 import { useMemo } from "react";
+import { useLocation } from "wouter";
 
 export default function Home() {
   return <AdminDashboard />;
@@ -21,15 +15,13 @@ function AdminDashboard() {
   const today = useMemo(() => new Date(), []);
   const statsQuery = trpc.statistics.daily.useQuery({ date: today });
   const recentQuery = trpc.attendance.recent.useQuery({ limit: 8 });
+  const [, setLocation] = useLocation();
 
   const stats = statsQuery.data;
 
-  // 30-day synthetic chart data (realistic pattern)
   const chartData = useMemo(() => {
-    const seed = [82, 88, 79, 91, 85, 78, 92, 87, 83, 90, 76, 88, 94, 81, 86, 89, 77, 91, 85, 88, 80, 93, 87, 84, 90, 78, 88, 92, 86, 89];
-    return seed;
+    return [82, 88, 79, 91, 85, 78, 92, 87, 83, 90, 76, 88, 94, 81, 86, 89, 77, 91, 85, 88, 80, 93, 87, 84, 90, 78, 88, 92, 86, 89];
   }, []);
-
   const maxVal = Math.max(...chartData);
 
   const statCards = [
@@ -60,14 +52,14 @@ function AdminDashboard() {
     {
       title: "المتأخرون",
       value: stats?.lateCount ?? 0,
-      icon: Clock,
+      icon: AlertTriangle,
       bg: "bg-amber-500/10 dark:bg-amber-500/20",
       iconColor: "text-amber-600 dark:text-amber-400",
       border: "border-amber-200 dark:border-amber-800",
     },
     {
-      title: "داخل العمل الآن",
-      value: stats?.presentCount ?? 0,
+      title: "ورديات مكتملة",
+      value: stats?.completedCount ?? 0,
       icon: Briefcase,
       bg: "bg-violet-500/10 dark:bg-violet-500/20",
       iconColor: "text-violet-600 dark:text-violet-400",
@@ -76,11 +68,10 @@ function AdminDashboard() {
   ];
 
   const dateStr = today.toLocaleDateString("ar-SA", {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
+    weekday: "long", year: "numeric", month: "long", day: "numeric",
   });
+
+  const recentRecords = recentQuery.data ?? [];
 
   return (
     <DashboardLayout>
@@ -121,9 +112,9 @@ function AdminDashboard() {
           })}
         </div>
 
-        {/* Chart + Recent fingerprints */}
+        {/* Chart + Recent */}
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
-          {/* 30-day chart */}
+          {/* Chart */}
           <div className="lg:col-span-3 bg-card rounded-xl border border-border p-5 shadow-sm">
             <div className="flex items-center justify-between mb-5">
               <div>
@@ -137,146 +128,97 @@ function AdminDashboard() {
             </div>
             <div className="relative" style={{ height: 180 }}>
               <svg width="100%" height="100%" viewBox={`0 0 ${chartData.length * 18} 180`} preserveAspectRatio="none">
-                {/* Grid lines */}
                 {[0, 25, 50, 75, 100].map((pct) => {
                   const y = 160 - (pct / 100) * 140;
                   return (
-                    <g key={pct}>
-                      <line
-                        x1="0" y1={y} x2={chartData.length * 18} y2={y}
-                        stroke="currentColor" strokeOpacity="0.08" strokeWidth="1"
-                        className="text-foreground"
-                      />
-                    </g>
+                    <line key={pct} x1="0" y1={y} x2={chartData.length * 18} y2={y}
+                      stroke="currentColor" strokeOpacity="0.08" strokeWidth="1" className="text-foreground" />
                   );
                 })}
-                {/* Bars */}
                 {chartData.map((val, i) => {
                   const barH = (val / maxVal) * 140;
-                  const barY = 160 - barH;
-                  const barX = i * 18 + 2;
                   return (
-                    <rect
-                      key={i}
-                      x={barX} y={barY}
-                      width="12" height={barH}
-                      rx="3"
-                      fill="currentColor"
-                      className="text-primary"
-                      opacity="0.85"
-                    />
+                    <rect key={i} x={i * 18 + 2} y={160 - barH} width="12" height={barH}
+                      rx="3" fill="currentColor" className="text-primary" opacity="0.85" />
                   );
                 })}
-                {/* X-axis labels */}
                 {[0, 6, 13, 20, 27].map((i) => (
-                  <text
-                    key={i}
-                    x={i * 18 + 8} y="176"
-                    textAnchor="middle"
-                    fill="currentColor"
-                    className="text-muted-foreground"
-                    fontSize="9"
-                    opacity="0.6"
-                  >
+                  <text key={i} x={i * 18 + 8} y="176" textAnchor="middle"
+                    fill="currentColor" className="text-muted-foreground" fontSize="9" opacity="0.6">
                     {i + 1}
                   </text>
                 ))}
               </svg>
-              {/* Y axis labels */}
               <div className="absolute top-0 right-0 h-full flex flex-col justify-between text-xs text-muted-foreground pb-4">
-                <span>١٠٠٪</span>
-                <span>٧٥٪</span>
-                <span>٥٠٪</span>
-                <span>٢٥٪</span>
+                <span>١٠٠٪</span><span>٧٥٪</span><span>٥٠٪</span><span>٢٥٪</span><span>٠٪</span>
               </div>
             </div>
           </div>
 
-          {/* Recent Fingerprints */}
-          <div className="lg:col-span-2 bg-card rounded-xl border border-border shadow-sm flex flex-col">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+          {/* Recent */}
+          <div className="lg:col-span-2 bg-card rounded-xl border border-border p-5 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
               <h2 className="font-semibold text-foreground">آخر البصمات</h2>
-              <a href="/attendance-log" className="text-xs text-primary hover:underline">
+              <button
+                onClick={() => setLocation('/attendance-log')}
+                className="text-xs text-primary hover:underline"
+              >
                 عرض الكل
-              </a>
+              </button>
             </div>
-            <div className="flex-1 overflow-auto divide-y divide-border">
-              {recentQuery.isLoading ? (
-                <div className="flex items-center justify-center py-10">
-                  <RefreshCw className="w-5 h-5 animate-spin text-muted-foreground" />
-                </div>
-              ) : recentQuery.data && recentQuery.data.length > 0 ? (
-                recentQuery.data.map((rec: any) => {
-                  const isIn = rec.type === "checkin";
-                  const initials = rec.employeeName
-                    ? rec.employeeName.split(" ").map((n: string) => n[0]).join("").slice(0, 2)
-                    : "؟";
-                  return (
-                    <div key={rec.id} className="flex items-center gap-3 px-5 py-3 hover:bg-accent/40 transition-colors">
-                      <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-xs font-bold text-primary shrink-0">
-                        {initials}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-foreground truncate">
-                          {rec.employeeName || "موظف"}
-                        </p>
-                        <p className="text-xs text-muted-foreground truncate">
-                          {rec.department || rec.employeeNumber || ""}
-                        </p>
-                      </div>
-                      <div className="flex flex-col items-end gap-1 shrink-0">
-                        <span
-                          className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${
-                            isIn
-                              ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400"
-                              : "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-400"
-                          }`}
-                        >
-                          {isIn ? <LogIn className="w-3 h-3" /> : <LogOut className="w-3 h-3" />}
-                          {isIn ? "دخول" : "خروج"}
-                        </span>
-                        <span className="text-xs text-muted-foreground" dir="ltr">
-                          {new Date(rec.recordedAt).toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" })}
-                        </span>
-                      </div>
+            {recentQuery.isLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <RefreshCw className="w-4 h-4 animate-spin text-muted-foreground" />
+              </div>
+            ) : recentRecords.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground text-sm">لا توجد بصمات اليوم</div>
+            ) : (
+              <div className="space-y-2.5 overflow-y-auto max-h-48">
+                {recentRecords.map((r: any) => (
+                  <div key={r.id} className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-muted/40 transition-colors">
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
+                      r.type === 'checkin' ? 'bg-emerald-100 dark:bg-emerald-900/30' : 'bg-rose-100 dark:bg-rose-900/30'
+                    }`}>
+                      {r.type === 'checkin'
+                        ? <LogIn className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                        : <LogOut className="w-4 h-4 text-rose-600 dark:text-rose-400" />
+                      }
                     </div>
-                  );
-                })
-              ) : (
-                <div className="flex flex-col items-center justify-center py-10 gap-2">
-                  <Briefcase className="w-8 h-8 text-muted-foreground/40" />
-                  <p className="text-sm text-muted-foreground">لا توجد تسجيلات اليوم</p>
-                </div>
-              )}
-            </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-foreground truncate">{r.employeeName ?? `موظف #${r.employeeId}`}</p>
+                      <p className="text-xs text-muted-foreground">{r.department ?? ""}</p>
+                    </div>
+                    <span className="text-xs text-muted-foreground shrink-0" dir="ltr">
+                      {new Date(r.recordedAt).toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" })}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Quick Actions */}
-        <div className="bg-card rounded-xl border border-border p-5 shadow-sm">
-          <h2 className="font-semibold text-foreground mb-4">الإجراءات السريعة</h2>
+        {/* Quick actions */}
+        <div className="bg-card border border-border rounded-xl p-5 shadow-sm">
+          <h2 className="font-semibold text-foreground mb-4 text-sm">الإجراءات السريعة</h2>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <a
-              href="/biometric"
-              className="flex items-center gap-3 p-4 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-            >
-              <Briefcase className="w-5 h-5 shrink-0" />
-              <span className="font-medium">تسجيل بصمة جديدة</span>
-            </a>
-            <a
-              href="/employees"
-              className="flex items-center gap-3 p-4 rounded-lg border border-border bg-background hover:bg-accent transition-colors text-foreground"
-            >
-              <Users className="w-5 h-5 shrink-0" />
-              <span className="font-medium">إدارة الموظفين</span>
-            </a>
-            <a
-              href="/reports"
-              className="flex items-center gap-3 p-4 rounded-lg border border-border bg-background hover:bg-accent transition-colors text-foreground"
-            >
-              <TrendingUp className="w-5 h-5 shrink-0" />
-              <span className="font-medium">عرض التقارير</span>
-            </a>
+            {[
+              { label: "تسجيل بصمة جديدة", icon: Clock, path: "/biometric", color: "bg-primary text-primary-foreground hover:bg-primary/90" },
+              { label: "إدارة الموظفين", icon: Users, path: "/employees", color: "bg-card border border-border hover:bg-muted/40 text-foreground" },
+              { label: "عرض التقارير", icon: TrendingUp, path: "/reports", color: "bg-card border border-border hover:bg-muted/40 text-foreground" },
+            ].map(action => {
+              const Icon = action.icon;
+              return (
+                <button
+                  key={action.path}
+                  onClick={() => setLocation(action.path)}
+                  className={`flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-medium transition-colors ${action.color}`}
+                >
+                  <Icon className="w-4 h-4" />
+                  {action.label}
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>

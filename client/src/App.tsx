@@ -9,6 +9,7 @@ import QuickBiometric from "./pages/QuickBiometric";
 import EmployeeManagement from "./pages/EmployeeManagement";
 import Reports from "./pages/Reports";
 import AttendanceLog from "./pages/AttendanceLog";
+import ShiftManagement from "./pages/ShiftManagement";
 
 function Router() {
   return (
@@ -17,6 +18,7 @@ function Router() {
       <Route path={"/biometric"} component={QuickBiometric} />
       <Route path={"/employees"} component={EmployeeManagement} />
       <Route path={"/attendance-log"} component={AttendanceLog} />
+      <Route path={"/shifts"} component={ShiftManagement} />
       <Route path={"/reports"} component={Reports} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />
