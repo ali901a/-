@@ -38,7 +38,16 @@ export class DeviceManager {
       password: device.password,
     });
 
-    return adapter.testConnection();
+    const result = await adapter.testConnection();
+    await deviceDb.updateDeviceConnectionStatus(deviceId, result.success ? "connected" : "error");
+    if (!result.success) {
+      await deviceDb.createConnectionError({
+        deviceId,
+        operation: "test_connection",
+        message: result.error ?? "فشل الاتصال بالجهاز",
+      });
+    }
+    return result;
   }
 
   /** اختبار اتصال جهاز بإعداداته مباشرة (قبل الحفظ) */

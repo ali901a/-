@@ -18,6 +18,12 @@ description: Architecture and gotchas for the ZKTeco device adapter system added
 
 **Why:** `drizzle-kit generate` and `push` both fail silently or error in non-TTY shells when schema conflicts exist. Applied via `scripts/apply-device-schema.ts` (direct SQL via pg Pool). Run this script whenever new device-related columns are added.
 
+Connection failures are kept in a dedicated `deviceConnectionErrors` table, while `deviceSyncLogs` remains the operational summary for each synchronization.
+
+**Why:** Operators need a searchable error history without losing the aggregate counts and status information used by synchronization reporting.
+
+**How to apply:** Add connection/test failures to the error table and keep synchronization totals in `deviceSyncLogs`; use the device row only for the current connection state and timestamps.
+
 ## Adding a new device brand
 1. Create `server/devices/adapters/<brand>/<BrandAdapter>.ts` implementing `IDeviceAdapter`
 2. Register in `server/devices/adapters/index.ts` with `registry.register({ brand, models, protocol, factory })`

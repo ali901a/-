@@ -16,6 +16,7 @@ const adminOnly = protectedProcedure.use(({ ctx, next }) => {
 });
 
 const deviceInput = z.object({
+  deviceId: z.string().max(100).optional(),
   name: z.string().min(1, "الاسم مطلوب"),
   brand: z.enum(["zkteco", "other"]).default("zkteco"),
   model: z.string().min(1).default("generic"),
@@ -25,6 +26,7 @@ const deviceInput = z.object({
   timeoutSeconds: z.number().int().min(1).max(60).default(10),
   password: z.string().optional(),
   location: z.string().optional(),
+  branch: z.string().max(200).optional(),
   notes: z.string().optional(),
   isActive: z.boolean().default(true),
   autoSyncEnabled: z.boolean().default(true),
@@ -51,6 +53,7 @@ export const deviceRouter = router({
     .mutation(async ({ input }) => {
       const device = await deviceDb.createDevice({
         name: input.name,
+        deviceId: input.deviceId,
         brand: input.brand,
         model: input.model,
         protocol: input.protocol,
@@ -59,6 +62,7 @@ export const deviceRouter = router({
         timeoutSeconds: input.timeoutSeconds,
         password: input.password,
         location: input.location,
+        branch: input.branch,
         notes: input.notes,
         isActive: input.isActive,
         autoSyncEnabled: input.autoSyncEnabled,
@@ -136,6 +140,10 @@ export const deviceRouter = router({
     .query(async ({ input }) => {
       return deviceDb.getRecentSyncLogs(input.limit);
     }),
+
+  connectionErrors: adminOnly
+    .input(z.object({ deviceId: z.number().optional(), limit: z.number().int().min(1).max(200).default(50) }))
+    .query(async ({ input }) => deviceDb.getConnectionErrors(input.deviceId, input.limit)),
 
   // ============= ربط الموظفين =============
 

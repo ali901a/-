@@ -37,6 +37,7 @@ async function main() {
     await client.query(`
       CREATE TABLE IF NOT EXISTS "devices" (
         "id"                      SERIAL PRIMARY KEY,
+        "deviceId"                VARCHAR(100),
         "name"                    VARCHAR(100) NOT NULL,
         "brand"                   device_brand NOT NULL DEFAULT 'zkteco',
         "model"                   VARCHAR(100) NOT NULL DEFAULT 'generic',
@@ -46,8 +47,11 @@ async function main() {
         "timeoutSeconds"          INTEGER NOT NULL DEFAULT 10,
         "password"                VARCHAR(64),
         "location"                VARCHAR(200),
+        "branch"                  VARCHAR(200),
         "notes"                   TEXT,
         "isActive"                BOOLEAN NOT NULL DEFAULT TRUE,
+        "connectionStatus"        VARCHAR(20) NOT NULL DEFAULT 'unknown',
+        "lastConnectionAt"        TIMESTAMP,
         "autoSyncEnabled"         BOOLEAN NOT NULL DEFAULT TRUE,
         "syncIntervalMinutes"     INTEGER NOT NULL DEFAULT 30,
         "lastSyncAt"              TIMESTAMP,
@@ -55,6 +59,21 @@ async function main() {
         "lastAttendanceTimestamp" TIMESTAMP,
         "createdAt"               TIMESTAMP NOT NULL DEFAULT NOW(),
         "updatedAt"               TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+    `);
+    await client.query(`ALTER TABLE "devices" ADD COLUMN IF NOT EXISTS "deviceId" VARCHAR(100)`);
+    await client.query(`ALTER TABLE "devices" ADD COLUMN IF NOT EXISTS "branch" VARCHAR(200)`);
+    await client.query(`ALTER TABLE "devices" ADD COLUMN IF NOT EXISTS "connectionStatus" VARCHAR(20) NOT NULL DEFAULT 'unknown'`);
+    await client.query(`ALTER TABLE "devices" ADD COLUMN IF NOT EXISTS "lastConnectionAt" TIMESTAMP`);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS "deviceConnectionErrors" (
+        "id"          SERIAL PRIMARY KEY,
+        "deviceId"    INTEGER NOT NULL,
+        "operation"   VARCHAR(50) NOT NULL,
+        "message"     TEXT NOT NULL,
+        "stack"       TEXT,
+        "occurredAt"  TIMESTAMP NOT NULL DEFAULT NOW()
       );
     `);
 
@@ -102,6 +121,10 @@ async function main() {
     await client.query(`
       CREATE UNIQUE INDEX IF NOT EXISTS "idx_deviceEmployeeMappings_unique"
         ON "deviceEmployeeMappings" ("deviceId", "deviceUserId");
+    `);
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS "idx_deviceConnectionErrors_deviceId"
+        ON "deviceConnectionErrors" ("deviceId", "occurredAt");
     `);
 
     await client.query("COMMIT");

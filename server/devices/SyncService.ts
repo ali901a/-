@@ -79,6 +79,12 @@ export async function syncDevice(
       } catch (err) {
         const msg = `خطأ في استيراد الموظفين: ${formatError(err)}`;
         result.errors.push(msg);
+        await deviceDb.createConnectionError({
+          deviceId,
+          operation: "import_employees",
+          message: msg,
+          stack: formatErrorStack(err),
+        }).catch(() => undefined);
         console.error(`[SyncService] ${msg}`);
       }
     }
@@ -97,6 +103,12 @@ export async function syncDevice(
       } catch (err) {
         const msg = `خطأ في استيراد سجلات الحضور: ${formatError(err)}`;
         result.errors.push(msg);
+        await deviceDb.createConnectionError({
+          deviceId,
+          operation: "import_attendance",
+          message: msg,
+          stack: formatErrorStack(err),
+        }).catch(() => undefined);
         console.error(`[SyncService] ${msg}`);
       }
     }
@@ -112,6 +124,13 @@ export async function syncDevice(
   } catch (err) {
     const msg = formatError(err);
     result.errors.push(msg);
+    await deviceDb.updateDeviceConnectionStatus(deviceId, "error").catch(() => undefined);
+    await deviceDb.createConnectionError({
+      deviceId,
+      operation: "sync",
+      message: msg,
+      stack: formatErrorStack(err),
+    }).catch(() => undefined);
     console.error(`[SyncService] خطأ في مزامنة "${device.name}": ${msg}`);
     await deviceDb.updateDeviceSyncStatus(deviceId, "failed");
   } finally {
@@ -214,12 +233,13 @@ async function _importAttendanceLogs(
 
     // تسجيل الحضور عبر منطق النظام الأساسي
     try {
-      await recordAttendance({
+      await recordAttendance(
         employeeId,
-        recordedAt: log.recordedAt,
-        isManualEntry: false,
-        notes: `استيراد من جهاز: ${device.name}`,
-      });
+        log.inOutType === 1 || log.inOutType === 5 ? "checkout" : "checkin",
+        false,
+        `استيراد من جهاز: ${device.name}`,
+        log.recordedAt,
+      );
 
       imported++;
       if (!latestTimestamp || log.recordedAt > latestTimestamp) {

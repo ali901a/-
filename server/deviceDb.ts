@@ -2,11 +2,12 @@
  * وظائف قاعدة البيانات الخاصة بطبقة تكامل الأجهزة
  */
 
-import { eq, and, desc, gte, isNull, or } from "drizzle-orm";
+import { eq, and, desc, gte, lte, isNull, or } from "drizzle-orm";
 import { getDb } from "./db";
 import {
   devices,
   deviceSyncLogs,
+  deviceConnectionErrors,
   deviceEmployeeMappings,
   attendanceRecords,
   type Device,
@@ -15,6 +16,8 @@ import {
   type InsertDeviceSyncLog,
   type DeviceEmployeeMapping,
   type InsertDeviceEmployeeMapping,
+  type DeviceConnectionError,
+  type InsertDeviceConnectionError,
 } from "../drizzle/schema";
 
 // ============= الأجهزة =============
@@ -60,6 +63,7 @@ export async function deleteDevice(id: number): Promise<void> {
   if (!db) throw new Error("Database not available");
   await db.delete(deviceEmployeeMappings).where(eq(deviceEmployeeMappings.deviceId, id));
   await db.delete(deviceSyncLogs).where(eq(deviceSyncLogs.deviceId, id));
+  await db.delete(deviceConnectionErrors).where(eq(deviceConnectionErrors.deviceId, id));
   await db.delete(devices).where(eq(devices.id, id));
 }
 
@@ -75,10 +79,47 @@ export async function updateDeviceSyncStatus(
     .set({
       lastSyncAt: new Date(),
       lastSyncStatus: status,
+      connectionStatus: status === "failed" ? "error" : "connected",
+      lastConnectionAt: new Date(),
       ...(lastAttendanceTimestamp ? { lastAttendanceTimestamp } : {}),
       updatedAt: new Date(),
     })
     .where(eq(devices.id, id));
+}
+
+export async function updateDeviceConnectionStatus(
+  id: number,
+  status: "connected" | "disconnected" | "error"
+): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(devices).set({
+    connectionStatus: status,
+    lastConnectionAt: new Date(),
+    updatedAt: new Date(),
+  }).where(eq(devices.id, id));
+}
+
+export async function createConnectionError(
+  data: Omit<InsertDeviceConnectionError, "id">
+): Promise<DeviceConnectionError> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const rows = await db.insert(deviceConnectionErrors).values(data).returning();
+  if (!rows[0]) throw new Error("Failed to create connection error log");
+  return rows[0];
+}
+
+export async function getConnectionErrors(
+  deviceId?: number,
+  limit = 50
+): Promise<DeviceConnectionError[]> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db.select().from(deviceConnectionErrors)
+    .where(deviceId ? eq(deviceConnectionErrors.deviceId, deviceId) : undefined)
+    .orderBy(desc(deviceConnectionErrors.occurredAt))
+    .limit(limit);
 }
 
 // ============= سجلات المزامنة =============
@@ -241,7 +282,7 @@ export async function isDuplicateAttendance(
       and(
         eq(attendanceRecords.employeeId, employeeId),
         gte(attendanceRecords.recordedAt, from),
-        gte(to, attendanceRecords.recordedAt)
+        lte(attendanceRecords.recordedAt, to)
       )
     )
     .limit(1);

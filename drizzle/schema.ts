@@ -215,6 +215,7 @@ export const syncTypeEnum = pgEnum("sync_type", ["full", "incremental", "employe
  */
 export const devices = pgTable("devices", {
   id: serial("id").primaryKey(),
+  deviceId: varchar("deviceId", { length: 100 }),
   name: varchar("name", { length: 100 }).notNull(),
   brand: deviceBrandEnum("brand").notNull().default("zkteco"),
   model: varchar("model", { length: 100 }).notNull().default("generic"),
@@ -227,9 +228,12 @@ export const devices = pgTable("devices", {
   password: varchar("password", { length: 64 }),
   // موقع الجهاز ووصفه
   location: varchar("location", { length: 200 }),
+  branch: varchar("branch", { length: 200 }),
   notes: text("notes"),
   // الحالة والتزامن التلقائي
   isActive: boolean("isActive").default(true).notNull(),
+  connectionStatus: varchar("connectionStatus", { length: 20 }).default("unknown").notNull(),
+  lastConnectionAt: timestamp("lastConnectionAt"),
   autoSyncEnabled: boolean("autoSyncEnabled").default(true).notNull(),
   syncIntervalMinutes: integer("syncIntervalMinutes").default(30).notNull(),
   // آخر مزامنة ناجحة
@@ -243,6 +247,21 @@ export const devices = pgTable("devices", {
 
 export type Device = typeof devices.$inferSelect;
 export type InsertDevice = typeof devices.$inferInsert;
+
+/**
+ * سجل أخطاء الاتصال - يحتفظ بآخر أسباب فشل الوصول إلى الأجهزة
+ */
+export const deviceConnectionErrors = pgTable("deviceConnectionErrors", {
+  id: serial("id").primaryKey(),
+  deviceId: integer("deviceId").notNull(),
+  operation: varchar("operation", { length: 50 }).notNull(),
+  message: text("message").notNull(),
+  stack: text("stack"),
+  occurredAt: timestamp("occurredAt").defaultNow().notNull(),
+});
+
+export type DeviceConnectionError = typeof deviceConnectionErrors.$inferSelect;
+export type InsertDeviceConnectionError = typeof deviceConnectionErrors.$inferInsert;
 
 /**
  * جدول سجلات المزامنة - تتبع كل عملية مزامنة مع الجهاز

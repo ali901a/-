@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,7 +18,7 @@ import {
 import {
   Plus, RefreshCw, Wifi, WifiOff, Trash2, Edit2, Play,
   Loader2, CheckCircle2, XCircle, AlertCircle, Link2, Users,
-  Activity, Settings, ChevronRight,
+  Activity, Settings, ChevronRight, Search, ArrowUpDown, AlertTriangle,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -27,6 +27,7 @@ type Protocol = "tcp" | "sdk" | "simulated";
 type Brand = "zkteco" | "other";
 
 interface DeviceForm {
+  deviceId: string;
   name: string;
   brand: Brand;
   model: string;
@@ -36,6 +37,7 @@ interface DeviceForm {
   timeoutSeconds: number;
   password: string;
   location: string;
+  branch: string;
   notes: string;
   isActive: boolean;
   autoSyncEnabled: boolean;
@@ -43,6 +45,7 @@ interface DeviceForm {
 }
 
 const DEFAULT_FORM: DeviceForm = {
+  deviceId: "",
   name: "",
   brand: "zkteco",
   model: "generic",
@@ -52,6 +55,7 @@ const DEFAULT_FORM: DeviceForm = {
   timeoutSeconds: 10,
   password: "",
   location: "",
+  branch: "",
   notes: "",
   isActive: true,
   autoSyncEnabled: true,
@@ -86,6 +90,10 @@ function formatDate(d?: Date | string | null) {
 
 export default function DeviceManagement() {
   const [tab, setTab] = useState("devices");
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [protocolFilter, setProtocolFilter] = useState("all");
+  const [sortBy, setSortBy] = useState("name");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState<DeviceForm>(DEFAULT_FORM);
@@ -99,6 +107,7 @@ export default function DeviceManagement() {
   const devicesQ = trpc.devices.list.useQuery();
   const employeesQ = trpc.employees.list.useQuery();
   const syncLogsQ = trpc.devices.recentSyncLogs.useQuery({ limit: 30 });
+  const connectionErrorsQ = trpc.devices.connectionErrors.useQuery({ limit: 50 });
   const mappingsQ = trpc.devices.getMappings.useQuery(
     { deviceId: selectedDevice! },
     { enabled: selectedDevice !== null }
@@ -112,9 +121,12 @@ export default function DeviceManagement() {
   const linkM = trpc.devices.linkEmployee.useMutation({ onSuccess: () => { mappingsQ.refetch(); toast.success("تم الربط"); setLinkDialogOpen(false); } });
 
   function openCreate() { setForm(DEFAULT_FORM); setEditingId(null); setDialogOpen(true); }
-  function openEdit(d: typeof devicesQ.data extends (infer T)[] ? T : never) {
+  type DeviceRow = NonNullable<typeof devicesQ.data>[number];
+
+  function openEdit(d: DeviceRow) {
     setForm({
       name: d.name,
+      deviceId: d.deviceId ?? "",
       brand: d.brand as Brand,
       model: d.model,
       protocol: d.protocol as Protocol,
@@ -123,6 +135,7 @@ export default function DeviceManagement() {
       timeoutSeconds: d.timeoutSeconds,
       password: d.password ?? "",
       location: d.location ?? "",
+      branch: d.branch ?? "",
       notes: d.notes ?? "",
       isActive: d.isActive,
       autoSyncEnabled: d.autoSyncEnabled,
@@ -137,7 +150,9 @@ export default function DeviceManagement() {
     const payload = {
       ...form,
       password: form.password || undefined,
+      deviceId: form.deviceId || undefined,
       location: form.location || undefined,
+      branch: form.branch || undefined,
       notes: form.notes || undefined,
     };
     if (editingId) {
@@ -181,8 +196,32 @@ export default function DeviceManagement() {
   const devices = devicesQ.data ?? [];
   const mappings = mappingsQ.data ?? [];
   const syncLogs = syncLogsQ.data ?? [];
+  const connectionErrors = connectionErrorsQ.data ?? [];
   const employees = employeesQ.data ?? [];
   const saving = createM.isPending || updateM.isPending;
+  const filteredDevices = useMemo(() => {
+    const query = search.trim().toLocaleLowerCase();
+    return [...devices]
+      .filter((device) => {
+        const haystack = [device.name, device.deviceId, device.model, device.ipAddress, device.branch, device.location]
+          .filter(Boolean).join(" ").toLocaleLowerCase();
+        const matchesSearch = !query || haystack.includes(query);
+        const matchesStatus = statusFilter === "all" || device.connectionStatus === statusFilter;
+        const matchesProtocol = protocolFilter === "all" || device.protocol === protocolFilter;
+        return matchesSearch && matchesStatus && matchesProtocol;
+      })
+      .sort((a, b) => {
+        if (sortBy === "lastConnection") {
+          return (b.lastConnectionAt ? new Date(b.lastConnectionAt).getTime() : 0) -
+            (a.lastConnectionAt ? new Date(a.lastConnectionAt).getTime() : 0);
+        }
+        if (sortBy === "lastSync") {
+          return (b.lastSyncAt ? new Date(b.lastSyncAt).getTime() : 0) -
+            (a.lastSyncAt ? new Date(a.lastSyncAt).getTime() : 0);
+        }
+        return a.name.localeCompare(b.name, "ar");
+      });
+  }, [devices, search, statusFilter, protocolFilter, sortBy]);
 
   return (
     <DashboardLayout>
@@ -202,14 +241,47 @@ export default function DeviceManagement() {
         </div>
 
         <Tabs value={tab} onValueChange={setTab}>
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="devices">الأجهزة</TabsTrigger>
             <TabsTrigger value="mappings">ربط الموظفين</TabsTrigger>
             <TabsTrigger value="logs">سجلات المزامنة</TabsTrigger>
+            <TabsTrigger value="errors">أخطاء الاتصال</TabsTrigger>
           </TabsList>
 
           {/* ============= الأجهزة ============= */}
           <TabsContent value="devices" className="mt-4">
+            <div className="flex flex-wrap items-center gap-3 mb-4 rounded-xl border bg-card p-3">
+              <div className="relative min-w-[240px] flex-1">
+                <Search className="absolute right-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input className="pr-9" placeholder="ابحث بالاسم أو Device ID أو IP أو الفرع..." value={search} onChange={(e) => setSearch(e.target.value)} />
+              </div>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-[150px]"><SelectValue placeholder="حالة الاتصال" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">كل الحالات</SelectItem>
+                  <SelectItem value="connected">متصل</SelectItem>
+                  <SelectItem value="error">خطأ</SelectItem>
+                  <SelectItem value="unknown">غير معروف</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={protocolFilter} onValueChange={setProtocolFilter}>
+                <SelectTrigger className="w-[140px]"><SelectValue placeholder="البروتوكول" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">كل البروتوكولات</SelectItem>
+                  <SelectItem value="tcp">TCP/IP</SelectItem>
+                  <SelectItem value="sdk">SDK</SelectItem>
+                  <SelectItem value="simulated">محاكاة</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={sortBy} onValueChange={setSortBy}>
+                <SelectTrigger className="w-[170px]"><ArrowUpDown className="ml-2 h-4 w-4" /><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="name">ترتيب الاسم</SelectItem>
+                  <SelectItem value="lastConnection">آخر اتصال</SelectItem>
+                  <SelectItem value="lastSync">آخر مزامنة</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             {devicesQ.isLoading ? (
               <div className="flex justify-center py-16"><Loader2 className="w-8 h-8 animate-spin text-muted-foreground" /></div>
             ) : devices.length === 0 ? (
@@ -223,7 +295,11 @@ export default function DeviceManagement() {
               </div>
             ) : (
               <div className="grid gap-4">
-                {devices.map((device) => (
+                {filteredDevices.length === 0 ? (
+                  <div className="text-center py-12 text-muted-foreground border rounded-xl">
+                    لا توجد أجهزة مطابقة للفلاتر الحالية
+                  </div>
+                ) : filteredDevices.map((device) => (
                   <div key={device.id} className="border rounded-xl p-4 bg-card hover:shadow-md transition-shadow">
                     <div className="flex items-start justify-between">
                       <div className="flex items-center gap-3">
@@ -238,9 +314,9 @@ export default function DeviceManagement() {
                           <p className="text-sm text-muted-foreground">
                             {device.ipAddress}:{device.port} · {device.model.toUpperCase()} · {device.protocol.toUpperCase()}
                           </p>
-                          {device.location && (
-                            <p className="text-xs text-muted-foreground mt-0.5">{device.location}</p>
-                          )}
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            {device.branch || device.location || "بدون فرع"} {device.deviceId && `· Device ID: ${device.deviceId}`}
+                          </p>
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
@@ -252,6 +328,13 @@ export default function DeviceManagement() {
                           <p className="text-xs text-muted-foreground mt-0.5">
                             {formatDate(device.lastSyncAt)}
                           </p>
+                          <div className="flex items-center gap-1 justify-end mt-1">
+                            <span className={`h-2 w-2 rounded-full ${device.connectionStatus === "connected" ? "bg-emerald-500" : device.connectionStatus === "error" ? "bg-red-500" : "bg-slate-400"}`} />
+                            <span className="text-xs text-muted-foreground">
+                              {device.connectionStatus === "connected" ? "متصل" : device.connectionStatus === "error" ? "خطأ اتصال" : "غير معروف"}
+                            </span>
+                          </div>
+                          <p className="text-xs text-muted-foreground">آخر اتصال: {formatDate(device.lastConnectionAt)}</p>
                         </div>
                       </div>
                     </div>
@@ -393,6 +476,56 @@ export default function DeviceManagement() {
             </div>
           </TabsContent>
 
+          {/* ============= أخطاء الاتصال ============= */}
+          <TabsContent value="errors" className="mt-4">
+            <div className="flex justify-between items-center mb-4">
+              <Button size="sm" variant="outline" className="gap-2" onClick={() => connectionErrorsQ.refetch()}>
+                <RefreshCw className="w-3.5 h-3.5" />
+                تحديث
+              </Button>
+              <h3 className="font-medium text-right">سجل أخطاء الاتصال</h3>
+            </div>
+            {connectionErrorsQ.isLoading ? (
+              <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-muted-foreground" /></div>
+            ) : connectionErrors.length === 0 ? (
+              <div className="text-center py-16 text-muted-foreground border rounded-xl">
+                <CheckCircle2 className="w-10 h-10 mx-auto mb-3 text-emerald-500 opacity-70" />
+                <p>لا توجد أخطاء اتصال مسجلة</p>
+              </div>
+            ) : (
+              <div className="border rounded-xl overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-right">الجهاز</TableHead>
+                      <TableHead className="text-right">العملية</TableHead>
+                      <TableHead className="text-right">الخطأ</TableHead>
+                      <TableHead className="text-right">وقت الخطأ</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {connectionErrors.map((error) => {
+                      const device = devices.find((d) => d.id === error.deviceId);
+                      return (
+                        <TableRow key={error.id}>
+                          <TableCell className="font-medium">{device?.name ?? `#${error.deviceId}`}</TableCell>
+                          <TableCell className="text-sm text-muted-foreground">{error.operation}</TableCell>
+                          <TableCell className="max-w-[420px]">
+                            <div className="flex items-start gap-2 text-destructive text-sm">
+                              <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+                              <span className="break-words">{error.message}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-sm text-muted-foreground">{formatDate(error.occurredAt)}</TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </TabsContent>
+
           {/* ============= سجلات المزامنة ============= */}
           <TabsContent value="logs" className="mt-4">
             <div className="flex justify-between items-center mb-4">
@@ -490,6 +623,15 @@ export default function DeviceManagement() {
           <div className="space-y-4 py-2">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
+                <Label>Device ID</Label>
+                <Input
+                  dir="ltr"
+                  placeholder="مثال: ZK-001"
+                  value={form.deviceId}
+                  onChange={(e) => setForm({ ...form, deviceId: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1.5">
                 <Label>اسم الجهاز *</Label>
                 <Input
                   placeholder="مثل: جهاز المدخل الرئيسي"
@@ -503,6 +645,14 @@ export default function DeviceManagement() {
                   placeholder="مثل: المبنى A - الطابق الأول"
                   value={form.location}
                   onChange={(e) => setForm({ ...form, location: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>الفرع المرتبط</Label>
+                <Input
+                  placeholder="مثال: الفرع الرئيسي"
+                  value={form.branch}
+                  onChange={(e) => setForm({ ...form, branch: e.target.value })}
                 />
               </div>
             </div>
