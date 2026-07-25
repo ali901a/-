@@ -335,6 +335,63 @@ export const appRouter = router({
           overtimeCount: allShifts.filter(s => (s.overtimeMinutes ?? 0) > 0).length,
         };
       }),
+
+    chart: adminProcedure
+      .input(z.object({ days: z.number().int().min(7).max(365).default(30) }))
+      .query(async ({ input }) => {
+        return await db.getAttendanceChartData(input.days);
+      }),
+
+    employeesSummary: adminProcedure
+      .input(z.object({
+        startDate: z.date(),
+        endDate: z.date(),
+        department: z.string().optional(),
+      }))
+      .query(async ({ input }) => {
+        return await db.getAllEmployeesSummary(input.startDate, input.endDate, input.department);
+      }),
+
+    departments: adminProcedure.query(async () => {
+      return await db.getAllDepartments();
+    }),
+  }),
+
+  // ============= العطل الرسمية =============
+  holidays: router({
+    list: protectedProcedure.query(async () => {
+      return await db.getAllHolidays();
+    }),
+
+    create: adminProcedure
+      .input(z.object({
+        date: z.date(),
+        name: z.string().min(1),
+        isRecurringYearly: z.boolean().default(false),
+        notes: z.string().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        try {
+          return await db.createHoliday({
+            date: input.date,
+            name: input.name,
+            isRecurringYearly: input.isRecurringYearly,
+            notes: input.notes,
+          });
+        } catch (err: any) {
+          if (err.code === '23505') {
+            throw new TRPCError({ code: 'CONFLICT', message: 'يوجد عطلة بهذا التاريخ مسبقاً' });
+          }
+          throw err;
+        }
+      }),
+
+    delete: adminProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        await db.deleteHoliday(input.id);
+        return { success: true };
+      }),
   }),
 });
 

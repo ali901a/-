@@ -288,3 +288,24 @@ export const deviceEmployeeMappings = pgTable("deviceEmployeeMappings", {
 
 export type DeviceEmployeeMapping = typeof deviceEmployeeMappings.$inferSelect;
 export type InsertDeviceEmployeeMapping = typeof deviceEmployeeMappings.$inferInsert;
+
+// ============= العطل الرسمية =============
+
+/**
+ * جدول العطل الرسمية - تواريخ محددة خارج نطاق اليوم الإداري
+ */
+export const holidays = pgTable("holidays", {
+  id: serial("id").primaryKey(),
+  // تاريخ العطلة (يُخزّن كـ midnight لليوم)
+  date: timestamp("date").notNull().unique(),
+  // اسم أو وصف العطلة
+  name: varchar("name", { length: 200 }).notNull(),
+  // هل تتكرر سنوياً (مثل العطل الوطنية)
+  isRecurringYearly: boolean("isRecurringYearly").default(false).notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+
+export type Holiday = typeof holidays.$inferSelect;
+export type InsertHoliday = typeof holidays.$inferInsert;

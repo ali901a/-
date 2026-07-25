@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Plus, Edit2, Trash2, Loader2, Clock, Users, Calendar,
-  Moon, Sun, ChevronDown, CheckCircle, XCircle, Link,
+  Moon, Sun, Link, CheckCircle, XCircle, CalendarOff, RefreshCw,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -63,7 +63,7 @@ export default function ShiftManagement() {
       <div className="space-y-6" dir="rtl">
         <div>
           <h1 className="text-2xl font-bold text-foreground">إدارة الورديات</h1>
-          <p className="text-muted-foreground text-sm mt-1">تعريف أنواع الدوام وربطها بالموظفين</p>
+          <p className="text-muted-foreground text-sm mt-1">تعريف أنواع الدوام وربطها بالموظفين وإدارة العطل الرسمية</p>
         </div>
         <Tabs defaultValue="templates">
           <TabsList className="mb-4">
@@ -73,12 +73,18 @@ export default function ShiftManagement() {
             <TabsTrigger value="assignments" className="gap-2">
               <Link className="w-4 h-4" /> ربط الموظفين
             </TabsTrigger>
+            <TabsTrigger value="holidays" className="gap-2">
+              <CalendarOff className="w-4 h-4" /> العطل الرسمية
+            </TabsTrigger>
           </TabsList>
           <TabsContent value="templates">
             <TemplatesTab />
           </TabsContent>
           <TabsContent value="assignments">
             <AssignmentsTab />
+          </TabsContent>
+          <TabsContent value="holidays">
+            <HolidaysTab />
           </TabsContent>
         </Tabs>
       </div>
@@ -345,6 +351,10 @@ function TemplatesTab() {
                   </button>
                 ))}
               </div>
+              <p className="text-xs text-muted-foreground">
+                أيام العطل الأسبوعية:{" "}
+                {DAYS.filter(d => !form.workDays.includes(d.value)).map(d => d.label).join("، ") || "لا يوجد"}
+              </p>
             </div>
 
             {/* Notes */}
@@ -384,11 +394,9 @@ function AssignmentsTab() {
   const removeMutation = trpc.assignments.remove.useMutation();
   const utils = trpc.useUtils();
 
-  // جلب الوردية النشطة لكل موظف
   const employees = employeesQuery.data ?? [];
   const templates = templatesQuery.data ?? [];
 
-  // استخدام assignments list لعرض الكل
   const assignmentsQuery = trpc.assignments.list.useQuery();
   const assignments = assignmentsQuery.data ?? [];
 
@@ -403,7 +411,7 @@ function AssignmentsTab() {
       });
       toast.success("تم ربط الموظف بالوردية بنجاح");
       setIsOpen(false);
-      setForm({ employeeId: "", shiftTemplateId: "", effectiveFrom: new Date().toISOString().split("T")[0] });
+      setForm({ employeeId: "", shiftTemplateId: "", effectiveFrom: new Date().toISOString().split("T")[0]! });
       utils.assignments.list.invalidate();
     } catch (err: any) {
       toast.error(err?.message ?? "حدث خطأ");
@@ -421,7 +429,6 @@ function AssignmentsTab() {
     }
   };
 
-  // بناء خريطة الموظفين والورديات
   const employeeMap = Object.fromEntries(employees.map(e => [e.id, e]));
   const templateMap = Object.fromEntries(templates.map(t => [t.id, t]));
 
@@ -549,6 +556,200 @@ function AssignmentsTab() {
               <Button type="submit" className="flex-1" disabled={assignMutation.isPending}>
                 {assignMutation.isPending && <Loader2 className="w-4 h-4 animate-spin ml-2" />}
                 تطبيق التعيين
+              </Button>
+              <Button type="button" variant="outline" onClick={() => setIsOpen(false)}>إلغاء</Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+// ============= تبويب العطل الرسمية =============
+function HolidaysTab() {
+  const [isOpen, setIsOpen] = useState(false);
+  const [form, setForm] = useState({
+    date: new Date().toISOString().split("T")[0]!,
+    name: "",
+    isRecurringYearly: false,
+    notes: "",
+  });
+
+  const holidaysQuery = trpc.holidays.list.useQuery();
+  const createMutation = trpc.holidays.create.useMutation();
+  const deleteMutation = trpc.holidays.delete.useMutation();
+  const utils = trpc.useUtils();
+
+  const holidays = holidaysQuery.data ?? [];
+
+  // تجميع العطل حسب السنة
+  const byYear = holidays.reduce<Record<string, typeof holidays>>((acc, h) => {
+    const year = new Date(h.date).getFullYear().toString();
+    if (!acc[year]) acc[year] = [];
+    acc[year]!.push(h);
+    return acc;
+  }, {});
+  const years = Object.keys(byYear).sort((a, b) => parseInt(b) - parseInt(a));
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.name.trim()) { toast.error("اسم العطلة مطلوب"); return; }
+    try {
+      await createMutation.mutateAsync({
+        date: new Date(form.date),
+        name: form.name,
+        isRecurringYearly: form.isRecurringYearly,
+        notes: form.notes || undefined,
+      });
+      toast.success("تم إضافة العطلة بنجاح");
+      setIsOpen(false);
+      setForm({ date: new Date().toISOString().split("T")[0]!, name: "", isRecurringYearly: false, notes: "" });
+      utils.holidays.list.invalidate();
+    } catch (err: any) {
+      toast.error(err?.message ?? "حدث خطأ");
+    }
+  };
+
+  const handleDelete = async (id: number, name: string) => {
+    if (!confirm(`هل تريد حذف عطلة "${name}"؟`)) return;
+    try {
+      await deleteMutation.mutateAsync({ id });
+      toast.success("تم حذف العطلة");
+      utils.holidays.list.invalidate();
+    } catch (err: any) {
+      toast.error(err?.message ?? "حدث خطأ");
+    }
+  };
+
+  const fmtDate = (d: string | Date) =>
+    new Date(d).toLocaleDateString("ar-SA", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+
+  return (
+    <>
+      <div className="flex justify-between items-center mb-4">
+        <div>
+          <p className="text-sm text-muted-foreground">{holidays.length} عطلة مسجّلة</p>
+        </div>
+        <Button onClick={() => setIsOpen(true)} className="gap-2">
+          <Plus className="w-4 h-4" /> إضافة عطلة
+        </Button>
+      </div>
+
+      {/* Info banner */}
+      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4 mb-5 text-sm text-blue-700 dark:text-blue-300">
+        <p className="font-medium mb-1">📅 عطل رسمية</p>
+        <p className="text-xs">أضف تواريخ العطل الرسمية والمناسبات الوطنية. هذه العطل منفصلة عن أيام الإجازة الأسبوعية المحددة في إعدادات الوردية.</p>
+      </div>
+
+      {holidaysQuery.isLoading ? (
+        <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>
+      ) : holidays.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-16 gap-3 bg-card border border-border rounded-xl">
+          <CalendarOff className="w-10 h-10 text-muted-foreground/30" />
+          <p className="text-muted-foreground">لا توجد عطل مسجّلة.</p>
+          <Button onClick={() => setIsOpen(true)} variant="outline" className="gap-2">
+            <Plus className="w-4 h-4" /> إضافة عطلة
+          </Button>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {years.map(year => (
+            <div key={year}>
+              <h3 className="text-sm font-semibold text-muted-foreground mb-3 flex items-center gap-2">
+                <Calendar className="w-4 h-4" /> {year}
+                <span className="bg-muted rounded-full px-2 py-0.5 text-xs">{byYear[year]!.length}</span>
+              </h3>
+              <div className="bg-card border border-border rounded-xl shadow-sm overflow-hidden">
+                <div className="divide-y divide-border">
+                  {byYear[year]!.map(h => (
+                    <div key={h.id} className="flex items-center gap-4 px-5 py-3.5 hover:bg-muted/20 transition-colors">
+                      <div className="w-12 h-12 rounded-xl bg-rose-50 dark:bg-rose-900/20 flex flex-col items-center justify-center text-rose-600 dark:text-rose-400 shrink-0">
+                        <span className="text-lg font-bold leading-none">{new Date(h.date).getDate()}</span>
+                        <span className="text-xs opacity-70">
+                          {new Date(h.date).toLocaleDateString("ar-SA", { month: "short" })}
+                        </span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-foreground">{h.name}</p>
+                        <p className="text-xs text-muted-foreground">{fmtDate(h.date)}</p>
+                        {h.notes && <p className="text-xs text-muted-foreground/70 mt-0.5">{h.notes}</p>}
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {h.isRecurringYearly && (
+                          <span className="text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-2 py-0.5 rounded-full">
+                            سنوية
+                          </span>
+                        )}
+                        <Button
+                          variant="ghost" size="sm"
+                          className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                          onClick={() => handleDelete(h.id, h.name)}
+                          disabled={deleteMutation.isPending}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Add Holiday Dialog */}
+      <Dialog open={isOpen} onOpenChange={setIsOpen}>
+        <DialogContent className="max-w-md" dir="rtl">
+          <DialogHeader>
+            <DialogTitle>إضافة عطلة رسمية</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleCreate} className="space-y-4 pt-2">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">تاريخ العطلة <span className="text-destructive">*</span></label>
+              <Input
+                type="date"
+                value={form.date}
+                onChange={e => setForm(f => ({ ...f, date: e.target.value }))}
+                required
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">اسم العطلة <span className="text-destructive">*</span></label>
+              <Input
+                value={form.name}
+                onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                placeholder="مثال: اليوم الوطني، عيد الفطر..."
+                required
+              />
+            </div>
+            <label className="flex items-center gap-3 p-3 border border-border rounded-lg cursor-pointer hover:bg-muted/40 transition-colors">
+              <input
+                type="checkbox"
+                checked={form.isRecurringYearly}
+                onChange={e => setForm(f => ({ ...f, isRecurringYearly: e.target.checked }))}
+                className="w-4 h-4 accent-primary"
+              />
+              <div>
+                <p className="text-sm font-medium">تتكرر سنوياً</p>
+                <p className="text-xs text-muted-foreground">مثل العطل الوطنية والدينية المتكررة</p>
+              </div>
+            </label>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">ملاحظات (اختياري)</label>
+              <textarea
+                value={form.notes}
+                onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+                rows={2}
+                className="w-full px-3 py-2 border border-input rounded-lg bg-background text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+                placeholder="أي تفاصيل إضافية..."
+              />
+            </div>
+            <div className="flex gap-3 pt-2">
+              <Button type="submit" className="flex-1" disabled={createMutation.isPending}>
+                {createMutation.isPending && <Loader2 className="w-4 h-4 animate-spin ml-2" />}
+                إضافة العطلة
               </Button>
               <Button type="button" variant="outline" onClick={() => setIsOpen(false)}>إلغاء</Button>
             </div>

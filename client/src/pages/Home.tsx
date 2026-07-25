@@ -15,14 +15,12 @@ function AdminDashboard() {
   const today = useMemo(() => new Date(), []);
   const statsQuery = trpc.statistics.daily.useQuery({ date: today });
   const recentQuery = trpc.attendance.recent.useQuery({ limit: 8 });
+  const chartQuery = trpc.statistics.chart.useQuery({ days: 30 });
   const [, setLocation] = useLocation();
 
   const stats = statsQuery.data;
-
-  const chartData = useMemo(() => {
-    return [82, 88, 79, 91, 85, 78, 92, 87, 83, 90, 76, 88, 94, 81, 86, 89, 77, 91, 85, 88, 80, 93, 87, 84, 90, 78, 88, 92, 86, 89];
-  }, []);
-  const maxVal = Math.max(...chartData);
+  const chartData = chartQuery.data ?? [];
+  const maxVal = chartData.length > 0 ? Math.max(...chartData.map(d => d.total > 0 ? d.rate : 0), 1) : 100;
 
   const statCards = [
     {
@@ -73,6 +71,12 @@ function AdminDashboard() {
 
   const recentRecords = recentQuery.data ?? [];
 
+  // حساب التغيّر عن آخر 7 أيام
+  const recentRates = chartData.slice(-14);
+  const last7Avg = recentRates.slice(-7).reduce((s, d) => s + d.rate, 0) / 7;
+  const prev7Avg = recentRates.slice(0, 7).reduce((s, d) => s + d.rate, 0) / 7;
+  const rateDelta = Math.round(last7Avg - prev7Avg);
+
   return (
     <DashboardLayout>
       <div className="space-y-6" dir="rtl">
@@ -83,7 +87,7 @@ function AdminDashboard() {
             <p className="text-muted-foreground text-sm mt-1">{dateStr}</p>
           </div>
           <button
-            onClick={() => { statsQuery.refetch(); recentQuery.refetch(); }}
+            onClick={() => { statsQuery.refetch(); recentQuery.refetch(); chartQuery.refetch(); }}
             className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors px-3 py-1.5 rounded-lg hover:bg-accent"
           >
             <RefreshCw className={`w-4 h-4 ${statsQuery.isFetching ? "animate-spin" : ""}`} />
@@ -114,48 +118,86 @@ function AdminDashboard() {
 
         {/* Chart + Recent */}
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
-          {/* Chart */}
+          {/* Attendance rate chart — real data */}
           <div className="lg:col-span-3 bg-card rounded-xl border border-border p-5 shadow-sm">
             <div className="flex items-center justify-between mb-5">
               <div>
                 <h2 className="font-semibold text-foreground">معدل الحضور</h2>
                 <p className="text-xs text-muted-foreground mt-0.5">آخر 30 يوماً</p>
               </div>
-              <div className="flex items-center gap-2 text-xs text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 px-2.5 py-1 rounded-full">
-                <TrendingUp className="w-3.5 h-3.5" />
-                <span>+٣٪ عن الشهر الماضي</span>
-              </div>
+              {chartData.length >= 14 && (
+                <div className={`flex items-center gap-2 text-xs px-2.5 py-1 rounded-full ${
+                  rateDelta >= 0
+                    ? "text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30"
+                    : "text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-900/30"
+                }`}>
+                  <TrendingUp className="w-3.5 h-3.5" />
+                  <span>{rateDelta >= 0 ? `+${rateDelta}٪` : `${rateDelta}٪`} عن الأسبوع الماضي</span>
+                </div>
+              )}
             </div>
-            <div className="relative" style={{ height: 180 }}>
-              <svg width="100%" height="100%" viewBox={`0 0 ${chartData.length * 18} 180`} preserveAspectRatio="none">
-                {[0, 25, 50, 75, 100].map((pct) => {
-                  const y = 160 - (pct / 100) * 140;
-                  return (
-                    <line key={pct} x1="0" y1={y} x2={chartData.length * 18} y2={y}
-                      stroke="currentColor" strokeOpacity="0.08" strokeWidth="1" className="text-foreground" />
-                  );
-                })}
-                {chartData.map((val, i) => {
-                  const barH = (val / maxVal) * 140;
-                  return (
-                    <rect key={i} x={i * 18 + 2} y={160 - barH} width="12" height={barH}
-                      rx="3" fill="currentColor" className="text-primary" opacity="0.85" />
-                  );
-                })}
-                {[0, 6, 13, 20, 27].map((i) => (
-                  <text key={i} x={i * 18 + 8} y="176" textAnchor="middle"
-                    fill="currentColor" className="text-muted-foreground" fontSize="9" opacity="0.6">
-                    {i + 1}
-                  </text>
-                ))}
-              </svg>
-              <div className="absolute top-0 right-0 h-full flex flex-col justify-between text-xs text-muted-foreground pb-4">
-                <span>١٠٠٪</span><span>٧٥٪</span><span>٥٠٪</span><span>٢٥٪</span><span>٠٪</span>
+
+            {chartQuery.isLoading ? (
+              <div className="flex items-center justify-center" style={{ height: 180 }}>
+                <RefreshCw className="w-5 h-5 animate-spin text-muted-foreground" />
               </div>
-            </div>
+            ) : chartData.length === 0 ? (
+              <div className="flex items-center justify-center text-muted-foreground text-sm" style={{ height: 180 }}>
+                لا توجد بيانات بعد
+              </div>
+            ) : (
+              <div className="relative" style={{ height: 180 }}>
+                <svg width="100%" height="100%" viewBox={`0 0 ${chartData.length * 18} 180`} preserveAspectRatio="none">
+                  {[0, 25, 50, 75, 100].map((pct) => {
+                    const y = 160 - (pct / 100) * 140;
+                    return (
+                      <line key={pct} x1="0" y1={y} x2={chartData.length * 18} y2={y}
+                        stroke="currentColor" strokeOpacity="0.08" strokeWidth="1" className="text-foreground" />
+                    );
+                  })}
+                  {chartData.map((d, i) => {
+                    const barH = (d.rate / 100) * 140;
+                    const isToday = i === chartData.length - 1;
+                    return (
+                      <g key={i}>
+                        <rect
+                          x={i * 18 + 2} y={160 - barH} width="12" height={Math.max(barH, 2)}
+                          rx="3" fill="currentColor"
+                          className={isToday ? "text-primary" : "text-primary/50"}
+                          opacity={isToday ? 1 : 0.75}
+                        />
+                        {/* Tooltip-like text on hover via title */}
+                        <title>{`${d.date}: ${d.present}/${d.total} (${d.rate}٪)`}</title>
+                      </g>
+                    );
+                  })}
+                  {/* X-axis labels — show every 5th day */}
+                  {chartData.filter((_, i) => i % 5 === 0).map((d, idx) => {
+                    const i = idx * 5;
+                    return (
+                      <text key={i} x={i * 18 + 8} y="176" textAnchor="middle"
+                        fill="currentColor" className="text-muted-foreground" fontSize="9" opacity="0.6">
+                        {new Date(d.date).getDate()}
+                      </text>
+                    );
+                  })}
+                </svg>
+                <div className="absolute top-0 right-0 h-full flex flex-col justify-between text-xs text-muted-foreground pb-4">
+                  <span>١٠٠٪</span><span>٧٥٪</span><span>٥٠٪</span><span>٢٥٪</span><span>٠٪</span>
+                </div>
+              </div>
+            )}
+
+            {/* Today's rate highlight */}
+            {chartData.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-border flex items-center gap-4 text-xs text-muted-foreground">
+                <span>اليوم: <strong className="text-foreground">{chartData[chartData.length - 1]?.rate ?? 0}٪</strong></span>
+                <span>حاضر: <strong className="text-foreground">{chartData[chartData.length - 1]?.present ?? 0}</strong> من <strong className="text-foreground">{chartData[chartData.length - 1]?.total ?? 0}</strong></span>
+              </div>
+            )}
           </div>
 
-          {/* Recent */}
+          {/* Recent punches */}
           <div className="lg:col-span-2 bg-card rounded-xl border border-border p-5 shadow-sm">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-semibold text-foreground">آخر البصمات</h2>

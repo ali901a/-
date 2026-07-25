@@ -1,2 +1,3 @@
 - [Shift system design](shift-system-design.md) — business day boundary, overnight shifts, metrics calculation all in server/db.ts
 - [Device integration layer](device-integration-layer.md) — ZKTeco adapter pattern; drizzle-kit needs PTY so apply new tables via scripts/apply-device-schema.ts
+- [Holidays table](holidays-schema.md) — added via scripts/apply-holidays-schema.ts; unique index on date_trunc('day', date) prevents duplicates

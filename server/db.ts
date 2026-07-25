@@ -1,4 +1,4 @@
-import { eq, and, gte, lte, desc, sql, isNull, or } from "drizzle-orm";
+import { eq, and, gte, lte, desc, sql, isNull, or, asc } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { 
@@ -11,6 +11,7 @@ import {
   employeeShiftAssignments,
   attendanceEditLog,
   dailyStatistics,
+  holidays,
   type Employee,
   type AttendanceRecord,
   type Shift,
@@ -23,6 +24,8 @@ import {
   type InsertShiftTemplate,
   type InsertEmployeeShiftAssignment,
   type InsertAttendanceEditLog,
+  type Holiday,
+  type InsertHoliday,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -637,6 +640,167 @@ export async function getDashboardStats() {
     lateCount,
     absentCount: Math.max(0, totalEmployees - presentCount),
   };
+}
+
+// ============= العطل الرسمية =============
+
+export async function getAllHolidays() {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return await db.select().from(holidays).orderBy(asc(holidays.date));
+}
+
+export async function createHoliday(data: InsertHoliday) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  // normalise to midnight
+  const d = new Date(data.date);
+  d.setHours(0, 0, 0, 0);
+  const result = await db.insert(holidays).values({ ...data, date: d }).returning();
+  return result[0];
+}
+
+export async function deleteHoliday(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return await db.delete(holidays).where(eq(holidays.id, id));
+}
+
+export async function isHolidayDate(date: Date): Promise<boolean> {
+  const db = await getDb();
+  if (!db) return false;
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  const next = new Date(d);
+  next.setDate(next.getDate() + 1);
+  const result = await db.select({ id: holidays.id })
+    .from(holidays)
+    .where(and(gte(holidays.date, d), lte(holidays.date, next)))
+    .limit(1);
+  return result.length > 0;
+}
+
+// ============= رسم بياني بيانات حقيقية =============
+
+/**
+ * يُعيد معدل الحضور اليومي لآخر N يوماً
+ */
+export async function getAttendanceChartData(days: number = 30) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - days + 1);
+  startDate.setHours(0, 0, 0, 0);
+
+  const [totalResult, presentRows] = await Promise.all([
+    db.select({ count: sql<number>`count(*)::int` })
+      .from(employees)
+      .where(eq(employees.status, 'active')),
+    db.select({
+      day: sql<string>`(date_trunc('day', ${shifts.shiftDate}))::date::text`,
+      present: sql<number>`count(*)::int`,
+    })
+    .from(shifts)
+    .where(and(
+      gte(shifts.shiftDate, startDate),
+      sql`${shifts.checkInTime} is not null`,
+    ))
+    .groupBy(sql`date_trunc('day', ${shifts.shiftDate})`),
+  ]);
+
+  const total = totalResult[0]?.count ?? 0;
+  const byDay = Object.fromEntries(presentRows.map(r => [r.day, r.present]));
+
+  const result = [];
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    d.setHours(0, 0, 0, 0);
+    const key = d.toISOString().split('T')[0]!;
+    const present = byDay[key] ?? 0;
+    result.push({
+      date: key,
+      present,
+      total,
+      rate: total > 0 ? Math.round((present / total) * 100) : 0,
+    });
+  }
+  return result;
+}
+
+// ============= ملخص جميع الموظفين =============
+
+export async function getAllEmployeesSummary(
+  startDate: Date,
+  endDate: Date,
+  department?: string,
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const end = new Date(endDate);
+  end.setHours(23, 59, 59, 999);
+
+  // All active employees (optionally filtered by department)
+  const empConditions = [eq(employees.status, 'active')];
+  if (department) empConditions.push(eq(employees.department, department));
+  const allEmployees = await db.select().from(employees).where(and(...empConditions));
+
+  // Aggregated shift metrics per employee in the date range
+  const shiftRows = await db
+    .select({
+      employeeId: shifts.employeeId,
+      totalDays: sql<number>`count(*)::int`,
+      completedDays: sql<number>`count(*) filter (where ${shifts.status} = 'complete')::int`,
+      absentDays: sql<number>`count(*) filter (where ${shifts.status} = 'absent')::int`,
+      totalWorkHours: sql<number>`coalesce(sum(${shifts.workHours}::numeric), 0)::float`,
+      totalLateMinutes: sql<number>`coalesce(sum(${shifts.lateMinutes}), 0)::int`,
+      totalOvertimeMinutes: sql<number>`coalesce(sum(${shifts.overtimeMinutes}), 0)::int`,
+      totalEarlyLeaveMinutes: sql<number>`coalesce(sum(${shifts.earlyLeaveMinutes}), 0)::int`,
+      totalShortageMinutes: sql<number>`coalesce(sum(${shifts.shortageMinutes}), 0)::int`,
+      lateDays: sql<number>`count(*) filter (where ${shifts.lateMinutes} > 0)::int`,
+      overtimeDays: sql<number>`count(*) filter (where ${shifts.overtimeMinutes} > 0)::int`,
+    })
+    .from(shifts)
+    .where(and(gte(shifts.shiftDate, startDate), lte(shifts.shiftDate, end)))
+    .groupBy(shifts.employeeId);
+
+  const metricsMap = Object.fromEntries(shiftRows.map(r => [r.employeeId, r]));
+
+  return allEmployees.map(emp => {
+    const m = metricsMap[emp.id];
+    return {
+      employeeId: emp.id,
+      employeeName: emp.name,
+      employeeNumber: emp.employeeNumber,
+      department: emp.department,
+      position: emp.position ?? '',
+      totalDays: m?.totalDays ?? 0,
+      completedDays: m?.completedDays ?? 0,
+      absentDays: m?.absentDays ?? 0,
+      totalWorkHours: m?.totalWorkHours ?? 0,
+      totalLateMinutes: m?.totalLateMinutes ?? 0,
+      totalOvertimeMinutes: m?.totalOvertimeMinutes ?? 0,
+      totalEarlyLeaveMinutes: m?.totalEarlyLeaveMinutes ?? 0,
+      totalShortageMinutes: m?.totalShortageMinutes ?? 0,
+      lateDays: m?.lateDays ?? 0,
+      overtimeDays: m?.overtimeDays ?? 0,
+    };
+  });
+}
+
+// ============= قائمة الأقسام =============
+
+export async function getAllDepartments(): Promise<string[]> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const rows = await db
+    .selectDistinct({ dept: employees.department })
+    .from(employees)
+    .where(eq(employees.status, 'active'))
+    .orderBy(asc(employees.department));
+  return rows.map(r => r.dept);
 }
 
 export async function calculateDailyStatistics(date: Date) {
