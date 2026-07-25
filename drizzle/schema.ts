@@ -202,3 +202,89 @@ export const dailyStatistics = pgTable("dailyStatistics", {
 
 export type DailyStatistics = typeof dailyStatistics.$inferSelect;
 export type InsertDailyStatistics = typeof dailyStatistics.$inferInsert;
+
+// ============= Device Integration Layer =============
+
+export const deviceBrandEnum = pgEnum("device_brand", ["zkteco", "other"]);
+export const deviceProtocolEnum = pgEnum("device_protocol", ["tcp", "sdk", "simulated"]);
+export const syncStatusEnum = pgEnum("sync_status", ["pending", "running", "success", "failed", "partial"]);
+export const syncTypeEnum = pgEnum("sync_type", ["full", "incremental", "employees_only", "attendance_only"]);
+
+/**
+ * جدول الأجهزة - تكوين كل جهاز بصمة متصل بالنظام
+ */
+export const devices = pgTable("devices", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 100 }).notNull(),
+  brand: deviceBrandEnum("brand").notNull().default("zkteco"),
+  model: varchar("model", { length: 100 }).notNull().default("generic"),
+  protocol: deviceProtocolEnum("protocol").notNull().default("tcp"),
+  // إعدادات الشبكة
+  ipAddress: varchar("ipAddress", { length: 45 }).notNull(),
+  port: integer("port").notNull().default(4370),
+  timeoutSeconds: integer("timeoutSeconds").notNull().default(10),
+  // المصادقة (اختياري لبعض الموديلات)
+  password: varchar("password", { length: 64 }),
+  // موقع الجهاز ووصفه
+  location: varchar("location", { length: 200 }),
+  notes: text("notes"),
+  // الحالة والتزامن التلقائي
+  isActive: boolean("isActive").default(true).notNull(),
+  autoSyncEnabled: boolean("autoSyncEnabled").default(true).notNull(),
+  syncIntervalMinutes: integer("syncIntervalMinutes").default(30).notNull(),
+  // آخر مزامنة ناجحة
+  lastSyncAt: timestamp("lastSyncAt"),
+  lastSyncStatus: syncStatusEnum("lastSyncStatus"),
+  // تتبع البيانات المستوردة لمنع التكرار
+  lastAttendanceTimestamp: timestamp("lastAttendanceTimestamp"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+
+export type Device = typeof devices.$inferSelect;
+export type InsertDevice = typeof devices.$inferInsert;
+
+/**
+ * جدول سجلات المزامنة - تتبع كل عملية مزامنة مع الجهاز
+ */
+export const deviceSyncLogs = pgTable("deviceSyncLogs", {
+  id: serial("id").primaryKey(),
+  deviceId: integer("deviceId").notNull(),
+  syncType: syncTypeEnum("syncType").notNull(),
+  status: syncStatusEnum("status").notNull(),
+  // إحصائيات العملية
+  employeesImported: integer("employeesImported").default(0).notNull(),
+  attendanceImported: integer("attendanceImported").default(0).notNull(),
+  duplicatesSkipped: integer("duplicatesSkipped").default(0).notNull(),
+  // تفاصيل الخطأ إن وجد
+  errorMessage: text("errorMessage"),
+  errorStack: text("errorStack"),
+  // توقيت العملية
+  startedAt: timestamp("startedAt").defaultNow().notNull(),
+  completedAt: timestamp("completedAt"),
+  durationMs: integer("durationMs"),
+});
+
+export type DeviceSyncLog = typeof deviceSyncLogs.$inferSelect;
+export type InsertDeviceSyncLog = typeof deviceSyncLogs.$inferInsert;
+
+/**
+ * جدول ربط موظفي الجهاز بموظفي النظام
+ * يسمح بمزامنة الموظفين حتى لو اختلفت أرقامهم بين الجهاز والنظام
+ */
+export const deviceEmployeeMappings = pgTable("deviceEmployeeMappings", {
+  id: serial("id").primaryKey(),
+  deviceId: integer("deviceId").notNull(),
+  // رقم المستخدم في الجهاز
+  deviceUserId: varchar("deviceUserId", { length: 50 }).notNull(),
+  // اسم المستخدم كما في الجهاز
+  deviceUserName: varchar("deviceUserName", { length: 255 }),
+  // الموظف المقابل في النظام (null = لم يُربط بعد)
+  employeeId: integer("employeeId"),
+  isActive: boolean("isActive").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+
+export type DeviceEmployeeMapping = typeof deviceEmployeeMappings.$inferSelect;
+export type InsertDeviceEmployeeMapping = typeof deviceEmployeeMappings.$inferInsert;

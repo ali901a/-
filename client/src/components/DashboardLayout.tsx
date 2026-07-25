@@ -32,6 +32,7 @@ import {
   Users,
   ClipboardList,
   CalendarClock,
+  HardDriveDownload,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -44,6 +45,7 @@ const menuItems = [
   { icon: ClipboardList, label: "سجل الحضور", path: "/attendance-log" },
   { icon: BarChart3, label: "التقارير", path: "/reports" },
   { icon: Fingerprint, label: "تسجيل البصمة", path: "/biometric" },
+  { icon: HardDriveDownload, label: "أجهزة البصمة", path: "/devices" },
 ];
 
 const SIDEBAR_WIDTH_KEY = "sidebar-width";

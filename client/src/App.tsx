@@ -10,6 +10,7 @@ import EmployeeManagement from "./pages/EmployeeManagement";
 import Reports from "./pages/Reports";
 import AttendanceLog from "./pages/AttendanceLog";
 import ShiftManagement from "./pages/ShiftManagement";
+import DeviceManagement from "./pages/DeviceManagement";
 
 function Router() {
   return (
@@ -20,6 +21,7 @@ function Router() {
       <Route path={"/attendance-log"} component={AttendanceLog} />
       <Route path={"/shifts"} component={ShiftManagement} />
       <Route path={"/reports"} component={Reports} />
+      <Route path={"/devices"} component={DeviceManagement} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />
     </Switch>
